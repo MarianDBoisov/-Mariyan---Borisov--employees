@@ -1,0 +1,98 @@
+import java.awt.BorderLayout;
+import java.awt.EventQueue;
+import java.awt.event.ActionEvent;
+import java.awt.event.ActionListener;
+import java.io.BufferedReader;
+import java.io.FileReader;
+import java.io.IOException;
+import java.text.DateFormat;
+import java.text.ParseException;
+import java.text.SimpleDateFormat;
+import java.util.*;
+
+import javax.swing.JButton;
+import javax.swing.JFileChooser;
+import javax.swing.JFrame;
+import javax.swing.JPanel;
+import javax.swing.JScrollPane;
+import javax.swing.JTable;
+import javax.swing.filechooser.FileNameExtensionFilter;
+import javax.swing.table.DefaultTableModel;
+
+public class EmployeeWorkDurationUI implements ActionListener {
+
+    private JFrame frame;
+    private JTable table;
+    private DefaultTableModel model;
+    private JButton btnSelectFile;
+    private JFileChooser fileChooser;
+    private List<EmployeeWork> employeeWorkList;
+
+    public EmployeeWorkDurationUI() {
+        initialize();
+    }
+
+    private void initialize() {
+        frame = new JFrame("Employee Work Duration");
+        frame.setBounds(100, 100, 600, 400);
+        frame.setDefaultCloseOperation(JFrame.EXIT_ON_CLOSE);
+
+        JPanel panel = new JPanel();
+        frame.getContentPane().add(panel, BorderLayout.NORTH);
+
+        btnSelectFile = new JButton("Select File");
+        btnSelectFile.addActionListener(this);
+        panel.add(btnSelectFile);
+
+        model = new DefaultTableModel(new Object[][] {}, new String[] { "Employee ID #1", "Employee ID #2", "Project ID", "Days worked" });
+
+        table = new JTable(model);
+        JScrollPane scrollPane = new JScrollPane(table);
+        frame.getContentPane().add(scrollPane, BorderLayout.CENTER);
+    }
+
+    public void actionPerformed(ActionEvent e) {
+        if (e.getSource() == btnSelectFile) {
+            fileChooser = new JFileChooser();
+            FileNameExtensionFilter filter = new FileNameExtensionFilter("CSV files", "csv");
+            fileChooser.setFileFilter(filter);
+            int returnVal = fileChooser.showOpenDialog(frame);
+            if (returnVal == JFileChooser.APPROVE_OPTION) {
+                String filePath = fileChooser.getSelectedFile().getAbsolutePath();
+                employeeWorkList = readEmployeeWorkFromFile(filePath);
+                if (employeeWorkList != null) {
+                    updateTableData();
+                }
+            }
+        }
+    }
+
+    private void updateTableData() {
+        model.setRowCount(0);
+        Map<Integer, List<EmployeeWork>> projectEmployeeWorkMap = groupEmployeeWorkByProject(employeeWorkList);
+        Map<String, Integer> employeePairDurationMap = findEmployeePairDuration(projectEmployeeWorkMap);
+        for (String employeePair : employeePairDurationMap.keySet()) {
+            String[] employeeIds = employeePair.split(",");
+            int empId1 = Integer.parseInt(employeeIds[0]);
+            int empId2 = Integer.parseInt(employeeIds[1]);
+            int duration = employeePairDurationMap.get(employeePair);
+            model.addRow(new Object[] { empId1, empId2, "-", duration });
+        }
+    }
+
+    private List<EmployeeWork> readEmployeeWorkFromFile(String filePath) {
+        List<EmployeeWork> employeeWorkList = new ArrayList<>();
+        try (BufferedReader br = new BufferedReader(new FileReader(filePath))) {
+            String line;
+            while ((line = br.readLine()) != null) {
+                String[] values = line.split(",");
+                int empId = Integer.parseInt(values[0]);
+                int projectId = Integer.parseInt(values[1]);
+                Date dateFrom = parseDate(values[2]);
+                Date dateTo = values[3].equals("NULL") ? new Date() : parseDate(values[3]);
+                employeeWorkList.add(new EmployeeWork(empId, projectId, dateFrom, dateTo));
+            }
+        } catch (IOException | ParseException e) {
+            e.printStackTrace();
+            return
+           
