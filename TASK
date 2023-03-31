@@ -1,98 +1,98 @@
 import java.awt.BorderLayout;
 import java.awt.EventQueue;
-import java.awt.event.ActionEvent;
-import java.awt.event.ActionListener;
 import java.io.BufferedReader;
 import java.io.FileReader;
 import java.io.IOException;
-import java.text.DateFormat;
-import java.text.ParseException;
-import java.text.SimpleDateFormat;
-import java.util.*;
+import java.time.LocalDate;
+import java.time.format.DateTimeFormatter;
+import java.time.temporal.ChronoUnit;
+import java.util.ArrayList;
+import java.util.List;
 
-import javax.swing.JButton;
-import javax.swing.JFileChooser;
 import javax.swing.JFrame;
 import javax.swing.JPanel;
 import javax.swing.JScrollPane;
 import javax.swing.JTable;
-import javax.swing.filechooser.FileNameExtensionFilter;
+import javax.swing.SwingUtilities;
 import javax.swing.table.DefaultTableModel;
 
-public class EmployeeWorkDurationUI implements ActionListener {
-
-    private JFrame frame;
-    private JTable table;
-    private DefaultTableModel model;
-    private JButton btnSelectFile;
-    private JFileChooser fileChooser;
-    private List<EmployeeWork> employeeWorkList;
-
-    public EmployeeWorkDurationUI() {
-        initialize();
-    }
-
-    private void initialize() {
-        frame = new JFrame("Employee Work Duration");
-        frame.setBounds(100, 100, 600, 400);
-        frame.setDefaultCloseOperation(JFrame.EXIT_ON_CLOSE);
-
-        JPanel panel = new JPanel();
-        frame.getContentPane().add(panel, BorderLayout.NORTH);
-
-        btnSelectFile = new JButton("Select File");
-        btnSelectFile.addActionListener(this);
-        panel.add(btnSelectFile);
-
-        model = new DefaultTableModel(new Object[][] {}, new String[] { "Employee ID #1", "Employee ID #2", "Project ID", "Days worked" });
-
-        table = new JTable(model);
-        JScrollPane scrollPane = new JScrollPane(table);
-        frame.getContentPane().add(scrollPane, BorderLayout.CENTER);
-    }
-
-    public void actionPerformed(ActionEvent e) {
-        if (e.getSource() == btnSelectFile) {
-            fileChooser = new JFileChooser();
-            FileNameExtensionFilter filter = new FileNameExtensionFilter("CSV files", "csv");
-            fileChooser.setFileFilter(filter);
-            int returnVal = fileChooser.showOpenDialog(frame);
-            if (returnVal == JFileChooser.APPROVE_OPTION) {
-                String filePath = fileChooser.getSelectedFile().getAbsolutePath();
-                employeeWorkList = readEmployeeWorkFromFile(filePath);
-                if (employeeWorkList != null) {
-                    updateTableData();
-                }
-            }
+public class EmployeeProjectDuration {
+    private static final String FILE_PATH = "employee_data.csv";
+    private static final String[] COLUMN_NAMES = {"Employee ID #1", "Employee ID #2", "Project ID", "Days worked"};
+    private static final DateTimeFormatter[] DATE_FORMATS = {
+        DateTimeFormatter.ofPattern("yyyy-MM-dd"),
+        DateTimeFormatter.ofPattern("yyyy/MM/dd"),
+        DateTimeFormatter.ofPattern("dd-MM-yyyy"),
+        DateTimeFormatter.ofPattern("dd/MM/yyyy"),
+        DateTimeFormatter.ofPattern("MM/dd/yyyy")
+    };
+    
+    private static class Project {
+        int empId;
+        int projectId;
+        LocalDate dateFrom;
+        LocalDate dateTo;
+        
+        public Project(int empId, int projectId, LocalDate dateFrom, LocalDate dateTo) {
+            this.empId = empId;
+            this.projectId = projectId;
+            this.dateFrom = dateFrom;
+            this.dateTo = dateTo;
         }
     }
-
-    private void updateTableData() {
-        model.setRowCount(0);
-        Map<Integer, List<EmployeeWork>> projectEmployeeWorkMap = groupEmployeeWorkByProject(employeeWorkList);
-        Map<String, Integer> employeePairDurationMap = findEmployeePairDuration(projectEmployeeWorkMap);
-        for (String employeePair : employeePairDurationMap.keySet()) {
-            String[] employeeIds = employeePair.split(",");
-            int empId1 = Integer.parseInt(employeeIds[0]);
-            int empId2 = Integer.parseInt(employeeIds[1]);
-            int duration = employeePairDurationMap.get(employeePair);
-            model.addRow(new Object[] { empId1, empId2, "-", duration });
-        }
+    
+    public static void main(String[] args) {
+        List<Project> projects = readCsvFile(FILE_PATH);
+        Project longestPair = findLongestWorkingPair(projects);
+        
+        SwingUtilities.invokeLater(() -> {
+            createAndShowGUI(projects, longestPair);
+        });
     }
-
-    private List<EmployeeWork> readEmployeeWorkFromFile(String filePath) {
-        List<EmployeeWork> employeeWorkList = new ArrayList<>();
+    
+    private static List<Project> readCsvFile(String filePath) {
+        List<Project> projects = new ArrayList<>();
         try (BufferedReader br = new BufferedReader(new FileReader(filePath))) {
             String line;
             while ((line = br.readLine()) != null) {
+                if (line.startsWith("EmpID")) continue; // skip header row
                 String[] values = line.split(",");
-                int empId = Integer.parseInt(values[0]);
-                int projectId = Integer.parseInt(values[1]);
-                Date dateFrom = parseDate(values[2]);
-                Date dateTo = values[3].equals("NULL") ? new Date() : parseDate(values[3]);
-                employeeWorkList.add(new EmployeeWork(empId, projectId, dateFrom, dateTo));
+                int empId = Integer.parseInt(values[0].trim());
+                int projectId = Integer.parseInt(values[1].trim());
+                LocalDate dateFrom = null;
+                LocalDate dateTo = null;
+                for (DateTimeFormatter formatter : DATE_FORMATS) {
+                    try {
+                        dateFrom = LocalDate.parse(values[2].trim(), formatter);
+                        break;
+                    } catch (Exception e) {
+                        // ignore
+                    }
+                }
+                if (values.length > 3 && !values[3].trim().equalsIgnoreCase("NULL")) {
+                    for (DateTimeFormatter formatter : DATE_FORMATS) {
+                        try {
+                            dateTo = LocalDate.parse(values[3].trim(), formatter);
+                            break;
+                        } catch (Exception e) {
+                            // ignore
+                        }
+                    }
+                }
+                projects.add(new Project(empId, projectId, dateFrom, dateTo));
             }
-        } catch (IOException | ParseException e) {
+        } catch (IOException e) {
             e.printStackTrace();
-            return
-           
+        }
+        return projects;
+    }
+    
+    private static Project findLongestWorkingPair(List<Project> projects) {
+        int longestDuration = 0;
+        Project longestPair = null;
+        for (int i = 0; i < projects.size(); i++) {
+            for (int j = i+1; j < projects.size(); j++) {
+                Project p1 = projects.get(i);
+                Project p2 = projects.get(j);
+                if (p1.projectId == p2.projectId) { // common project
+                    LocalDate start = p1.dateFrom.isAfter(p2.dateFrom)
